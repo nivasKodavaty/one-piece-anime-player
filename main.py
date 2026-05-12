@@ -16,14 +16,16 @@ Deploy: Render, Railway, Vercel, or run locally with `uvicorn main:app`
 
 import re
 import asyncio
+import base64
 from typing import Optional
+from urllib.parse import urljoin, urlparse
 from contextlib import asynccontextmanager
 
 import httpx
 from bs4 import BeautifulSoup
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
 
@@ -345,6 +347,99 @@ async def get_stream(anime_id: str, episode: int):
         m3u8=m3u8_url,
         referer=referer,
         sources=sources,
+    )
+
+
+# ─── M3U8 Proxy (fixes VLC header issues) ────────────────────
+
+def _encode_url(url: str) -> str:
+    """Base64-encode a URL for safe use in path segments."""
+    return base64.urlsafe_b64encode(url.encode()).decode()
+
+
+def _decode_url(encoded: str) -> str:
+    """Decode a base64-encoded URL."""
+    # Add padding if needed
+    padded = encoded + "=" * (-len(encoded) % 4)
+    return base64.urlsafe_b64decode(padded).decode()
+
+
+@app.get("/api/proxy/m3u8", tags=["Proxy"])
+async def proxy_m3u8(url: str, referer: str = ""):
+    """
+    Proxy an m3u8 playlist, rewriting segment/sub-playlist URLs
+    so they also go through this proxy. This lets VLC play streams
+    that require a Referer header.
+    """
+    client = get_client()
+    headers = {**HEADERS}
+    if referer:
+        headers["Referer"] = referer
+        headers["Origin"] = f"{urlparse(referer).scheme}://{urlparse(referer).netloc}"
+
+    try:
+        resp = await client.get(url, headers=headers)
+        resp.raise_for_status()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Proxy fetch failed: {e}")
+
+    content = resp.text
+    content_type = resp.headers.get("content-type", "application/vnd.apple.mpegurl")
+
+    # If this is an m3u8 playlist, rewrite relative/absolute URLs
+    # so sub-playlists and .ts segments also go through the proxy
+    if "mpegurl" in content_type or url.endswith(".m3u8") or "#EXTM3U" in content:
+        lines = content.split("\n")
+        rewritten = []
+        for line in lines:
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#"):
+                # This is a URL line (segment or sub-playlist)
+                absolute = urljoin(url, stripped)
+                # Rewrite to go through our proxy
+                proxy_url = f"/api/proxy/m3u8?url={absolute}"
+                if referer:
+                    proxy_url += f"&referer={referer}"
+                rewritten.append(proxy_url)
+            else:
+                rewritten.append(line)
+        content = "\n".join(rewritten)
+
+    return Response(
+        content=content,
+        media_type="application/vnd.apple.mpegurl",
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "no-cache",
+        },
+    )
+
+
+@app.get("/api/proxy/ts", tags=["Proxy"])
+async def proxy_ts_segment(url: str, referer: str = ""):
+    """
+    Proxy a .ts video segment with the correct Referer header.
+    Returns the raw binary data.
+    """
+    client = get_client()
+    headers = {**HEADERS}
+    if referer:
+        headers["Referer"] = referer
+        headers["Origin"] = f"{urlparse(referer).scheme}://{urlparse(referer).netloc}"
+
+    try:
+        resp = await client.get(url, headers=headers)
+        resp.raise_for_status()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Segment proxy failed: {e}")
+
+    return Response(
+        content=resp.content,
+        media_type=resp.headers.get("content-type", "video/mp2t"),
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "public, max-age=3600",
+        },
     )
 
 

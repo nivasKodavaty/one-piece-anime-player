@@ -10,7 +10,7 @@ const CONFIG = {
   // Your deployed API URL (change after deploying to Render)
   // Local testing: "http://YOUR_MAC_IP:3030"
   // Production:    "https://your-api.onrender.com"
-  API_BASE: "http://localhost:3030",
+  API_BASE: "https://one-piece-anime-player.onrender.com",
 
   // Anime slug on Gogoanime/Anitaku
   ANIME_ID: "one-piece",
@@ -110,8 +110,14 @@ async function main() {
   }
 
   console.log(`🎯 m3u8: ${data.m3u8}`);
+
+  // Build proxied m3u8 URL so VLC gets correct headers
+  const referer = data.referer || "";
+  const proxyUrl = `${CONFIG.API_BASE}/api/proxy/m3u8?url=${encodeURIComponent(data.m3u8)}&referer=${encodeURIComponent(referer)}`;
+  console.log(`🔄 Proxy: ${proxyUrl}`);
+
   notify("🎬 Launching VLC", `Episode ${epNum} • 1080p`);
-  openVLC(data.m3u8);
+  openVLC(proxyUrl);
 
   console.log("✅ VLC launched");
   Script.complete();
