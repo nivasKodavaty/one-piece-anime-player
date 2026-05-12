@@ -367,9 +367,8 @@ def _decode_url(encoded: str) -> str:
 @app.get("/api/proxy/m3u8", tags=["Proxy"])
 async def proxy_m3u8(url: str, referer: str = ""):
     """
-    Proxy an m3u8 playlist, rewriting segment/sub-playlist URLs
-    so they also go through this proxy. This lets VLC play streams
-    that require a Referer header.
+    Smart proxy: serves m3u8 playlists (rewriting URLs) and binary
+    segments (.ts) with the correct Referer header so VLC can play.
     """
     client = get_client()
     headers = {**HEADERS}
@@ -383,12 +382,22 @@ async def proxy_m3u8(url: str, referer: str = ""):
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Proxy fetch failed: {e}")
 
-    content = resp.text
-    content_type = resp.headers.get("content-type", "application/vnd.apple.mpegurl")
+    content_type = resp.headers.get("content-type", "")
 
-    # If this is an m3u8 playlist, rewrite relative/absolute URLs
-    # so sub-playlists and .ts segments also go through the proxy
-    if "mpegurl" in content_type or url.endswith(".m3u8") or "#EXTM3U" in content:
+    # Determine if this is an m3u8 playlist or a binary segment.
+    # Check content-type first, then peek at the first bytes for #EXTM3U.
+    # Avoid decoding large binary payloads.
+    if "mpegurl" in content_type or url.endswith(".m3u8"):
+        is_playlist = True
+    elif len(resp.content) < 500_000 and resp.content[:7] == b"#EXTM3U":
+        is_playlist = True
+    else:
+        is_playlist = False
+
+    if is_playlist:
+        # Rewrite relative/absolute URLs in the playlist so
+        # sub-playlists and .ts segments also go through this proxy
+        content = resp.text
         lines = content.split("\n")
         rewritten = []
         for line in lines:
@@ -396,7 +405,6 @@ async def proxy_m3u8(url: str, referer: str = ""):
             if stripped and not stripped.startswith("#"):
                 # This is a URL line (segment or sub-playlist)
                 absolute = urljoin(url, stripped)
-                # Rewrite to go through our proxy
                 proxy_url = f"/api/proxy/m3u8?url={absolute}"
                 if referer:
                     proxy_url += f"&referer={referer}"
@@ -405,14 +413,24 @@ async def proxy_m3u8(url: str, referer: str = ""):
                 rewritten.append(line)
         content = "\n".join(rewritten)
 
-    return Response(
-        content=content,
-        media_type="application/vnd.apple.mpegurl",
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Cache-Control": "no-cache",
-        },
-    )
+        return Response(
+            content=content,
+            media_type="application/vnd.apple.mpegurl",
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Cache-Control": "no-cache",
+            },
+        )
+    else:
+        # Binary segment (e.g. .ts video data) — return raw bytes
+        return Response(
+            content=resp.content,
+            media_type=content_type or "video/mp2t",
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Cache-Control": "public, max-age=3600",
+            },
+        )
 
 
 @app.get("/api/proxy/ts", tags=["Proxy"])
