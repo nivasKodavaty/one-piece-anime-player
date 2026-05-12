@@ -532,7 +532,116 @@ async def play_redirect(episode: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ─── M3U8 Proxy (fixes VLC header issues) ────────────────────
+@app.get("/manga/{chapter}", tags=["Manga"], response_class=HTMLResponse)
+async def read_manga(chapter: str):
+    """
+    Ad-free native manga reader.
+    Scrapes images from readonepiece.com and serves them via our image proxy.
+    """
+    manga_url = f"https://ww10.readonepiece.com/chapter/one-piece-chapter-{chapter}/"
+    client = get_client()
+    try:
+        resp = await client.get(manga_url)
+        if resp.status_code != 200:
+            raise HTTPException(status_code=404, detail="Chapter not found on source.")
+            
+        soup = BeautifulSoup(resp.text, "lxml")
+        images = []
+        for img in soup.find_all("img"):
+            src = img.get("src", "")
+            if "cdn" in src or "mangap" in src or "pic" in src:
+                if "logo" not in src.lower() and "icon" not in src.lower():
+                    images.append(src)
+        
+        if not images:
+            raise HTTPException(status_code=404, detail="No manga images found on page.")
+            
+        # Build HTML
+        html_content = f"""
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+            <title>One Piece - Chapter {chapter}</title>
+            <style>
+                body {{
+                    background-color: #000;
+                    color: white;
+                    margin: 0;
+                    padding: 0;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                }}
+                .manga-page {{
+                    width: 100%;
+                    max-width: 800px;
+                    display: block;
+                    margin: 0 auto;
+                }}
+                .header, .footer {{
+                    padding: 20px;
+                    text-align: center;
+                    background: #111;
+                    width: 100%;
+                    box-sizing: border-box;
+                }}
+                .header h2 {{ margin: 0; font-size: 1.5rem; color: #e50914; }}
+                .footer p {{ margin: 0; color: #888; }}
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h2>One Piece - Chapter {chapter}</h2>
+            </div>
+        """
+        
+        for img_url in images:
+            # Proxy the image to bypass hotlinking restrictions
+            proxy_url = f"/api/proxy/image?url={quote(img_url)}&referer={quote('https://ww10.readonepiece.com/')}"
+            html_content += f'<img class="manga-page" src="{proxy_url}" loading="lazy" alt="Manga Page">\n'
+            
+        html_content += f"""
+            <div class="footer">
+                <p>End of Chapter {chapter}</p>
+            </div>
+        </body>
+        </html>
+        """
+        return HTMLResponse(content=html_content)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── M3U8 & Image Proxies ────────────────────────────────────
+
+@app.get("/api/proxy/image", tags=["Proxy"])
+async def proxy_image(url: str, referer: str = ""):
+    """Proxy image bytes to bypass hotlinking protection."""
+    client = get_client()
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    }
+    if referer:
+        headers["Referer"] = referer
+    
+    try:
+        resp = await client.get(url, headers=headers)
+        resp.raise_for_status()
+        return Response(
+            content=resp.content,
+            media_type=resp.headers.get("content-type", "image/jpeg"),
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Cache-Control": "public, max-age=86400"
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Image fetch failed: {e}")
 
 def _encode_url(url: str) -> str:
     """Base64-encode a URL for safe use in path segments."""
