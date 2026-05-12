@@ -116,10 +116,17 @@ async function main() {
   const proxyUrl = `${CONFIG.API_BASE}/api/proxy/m3u8?url=${encodeURIComponent(data.m3u8)}&referer=${encodeURIComponent(referer)}`;
   console.log(`🔄 Proxy: ${proxyUrl}`);
 
-  notify("🎬 Launching VLC", `Episode ${epNum} • 1080p`);
-  openVLC(proxyUrl);
+  notify("🎬 Opening Safari", `Episode ${epNum} • 1080p`);
 
-  console.log("✅ VLC launched");
+  // Pass the proxy URL back to Apple Shortcuts
+  Script.setShortcutOutput(proxyUrl);
+
+  // If run directly in the Scriptable app, just open it in Safari
+  if (config.runsInApp) {
+    Safari.open(proxyUrl);
+  }
+
+  console.log("✅ Sent link to Shortcuts / Safari");
   Script.complete();
 }
 

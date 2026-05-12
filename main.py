@@ -18,14 +18,14 @@ import re
 import asyncio
 import base64
 from typing import Optional
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, quote
 from contextlib import asynccontextmanager
 
 import httpx
 from bs4 import BeautifulSoup
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse, HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
 
@@ -174,20 +174,183 @@ async def extract_m3u8_from_embed(embed_url: str, referer: str) -> str | None:
 
 # ─── API Endpoints ───────────────────────────────────────────
 
-@app.get("/", tags=["Health"])
+@app.get("/", tags=["UI"], response_class=HTMLResponse)
 async def root():
-    """Health check and API info."""
-    return {
-        "status": "ok",
-        "name": "One Piece Anime Scraper API",
-        "version": "1.0.0",
-        "source": BASE_URL,
-        "endpoints": {
-            "search": "/api/search?keyword=one+piece",
-            "episodes": "/api/episodes/one-piece",
-            "stream": "/api/stream/one-piece/1",
-        },
-    }
+    """Web UI for easy playback without needing Shortcuts or Scriptable."""
+    html_content = """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+        <title>One Piece Player</title>
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+        <link rel="apple-touch-icon" href="https://upload.wikimedia.org/wikipedia/en/9/90/One_Piece%2C_Volume_61_Cover_%28Art%29.jpg">
+        <style>
+            :root {
+                --bg: #121212;
+                --surface: #1e1e1e;
+                --primary: #e50914;
+                --text: #ffffff;
+                --text-secondary: #aaaaaa;
+            }
+            body {
+                background-color: var(--bg);
+                color: var(--text);
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                margin: 0;
+                padding: 0;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+            }
+            .container {
+                background-color: var(--surface);
+                padding: 2.5rem 2rem;
+                border-radius: 16px;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+                text-align: center;
+                width: 85%;
+                max-width: 400px;
+            }
+            h1 {
+                margin-top: 0;
+                font-size: 1.8rem;
+                margin-bottom: 0.5rem;
+            }
+            p {
+                color: var(--text-secondary);
+                font-size: 0.9rem;
+                margin-bottom: 2rem;
+            }
+            input {
+                width: 100%;
+                box-sizing: border-box;
+                background-color: #2a2a2a;
+                border: 2px solid #333;
+                color: white;
+                font-size: 1.2rem;
+                padding: 1rem;
+                border-radius: 12px;
+                text-align: center;
+                margin-bottom: 1.5rem;
+                outline: none;
+                transition: border-color 0.2s;
+            }
+            input:focus {
+                border-color: var(--primary);
+            }
+            button {
+                width: 100%;
+                background-color: var(--primary);
+                color: white;
+                border: none;
+                padding: 1rem;
+                font-size: 1.2rem;
+                font-weight: bold;
+                border-radius: 12px;
+                cursor: pointer;
+                transition: background-color 0.2s, transform 0.1s;
+            }
+            button:active {
+                transform: scale(0.98);
+                background-color: #b80710;
+            }
+            .loader {
+                display: none;
+                margin-top: 1rem;
+                color: var(--text-secondary);
+                font-size: 0.9rem;
+            }
+            #errorMsg {
+                color: #ff4a4a;
+                margin-top: 1rem;
+                font-size: 0.9rem;
+                display: none;
+            }
+        </style>
+    </head>
+    <body>
+
+        <div class="container">
+            <h1>🏴‍☠️ One Piece</h1>
+            <p>Enter episode number to stream</p>
+            
+            <input type="number" id="epInput" placeholder="e.g. 1089" inputmode="numeric" pattern="[0-9]*">
+            <button id="playBtn" onclick="playEpisode()">Play Episode</button>
+            
+            <div id="loader" class="loader">Fetching stream... (this may take a few seconds)</div>
+            <div id="errorMsg"></div>
+        </div>
+
+        <script>
+            // Allow pressing Enter key
+            document.getElementById("epInput").addEventListener("keypress", function(event) {
+                if (event.key === "Enter") {
+                    event.preventDefault();
+                    playEpisode();
+                }
+            });
+
+            async function playEpisode() {
+                const ep = document.getElementById('epInput').value;
+                const btn = document.getElementById('playBtn');
+                const loader = document.getElementById('loader');
+                const errorMsg = document.getElementById('errorMsg');
+
+                if (!ep || ep < 1) {
+                    showError("Please enter a valid episode number.");
+                    return;
+                }
+
+                // Reset UI
+                errorMsg.style.display = 'none';
+                btn.disabled = true;
+                btn.style.opacity = '0.5';
+                loader.style.display = 'block';
+
+                try {
+                    const response = await fetch(`/api/stream/one-piece/${ep}`);
+                    const data = await response.json();
+
+                    if (!response.ok || data.error) {
+                        throw new Error(data.message || "Failed to find stream.");
+                    }
+
+                    if (!data.m3u8) {
+                        throw new Error("No video stream found for this episode.");
+                    }
+
+                    // Build proxy URL
+                    const referer = data.referer || "";
+                    const proxyUrl = `/api/proxy/m3u8?url=${encodeURIComponent(data.m3u8)}&referer=${encodeURIComponent(referer)}`;
+
+                    // Navigate directly to the video stream!
+                    // iOS Safari will natively open the video player
+                    window.location.href = proxyUrl;
+
+                } catch (err) {
+                    showError(err.message);
+                } finally {
+                    btn.disabled = false;
+                    btn.style.opacity = '1';
+                    loader.style.display = 'none';
+                }
+            }
+
+            function showError(msg) {
+                const errorMsg = document.getElementById('errorMsg');
+                errorMsg.innerText = "❌ " + msg;
+                errorMsg.style.display = 'block';
+            }
+        </script>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
 
 
 @app.get("/api/search", response_model=list[SearchResult], tags=["Anime"])
@@ -348,6 +511,25 @@ async def get_stream(anime_id: str, episode: int):
         referer=referer,
         sources=sources,
     )
+
+
+@app.get("/play/{episode}", tags=["Streaming"])
+async def play_redirect(episode: int):
+    """
+    Instantly redirects to the proxied stream.
+    Perfect for a 1-step iOS Shortcut: "Open URL: https://api.com/play/1089"
+    """
+    try:
+        data = await get_stream("one-piece", episode)
+        if not data.m3u8:
+            raise HTTPException(status_code=404, detail="No m3u8 stream found.")
+            
+        referer = data.referer or ""
+        # Build the proxy URL manually
+        proxy_url = f"/api/proxy/m3u8?url={quote(data.m3u8)}&referer={quote(referer)}"
+        return RedirectResponse(url=proxy_url)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ─── M3U8 Proxy (fixes VLC header issues) ────────────────────
