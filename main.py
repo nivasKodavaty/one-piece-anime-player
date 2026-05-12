@@ -537,24 +537,36 @@ async def read_manga(chapter: str):
     """
     Ad-free native manga reader.
     Scrapes images from readonepiece.com and serves them via our image proxy.
+    Automatically tries colored manga first, and falls back to B&W if not available.
     """
-    manga_url = f"https://ww10.readonepiece.com/chapter/one-piece-chapter-{chapter}/"
     client = get_client()
     try:
-        resp = await client.get(manga_url)
+        # Try colored version first
+        colored_url = f"https://ww10.readonepiece.com/chapter/one-piece-digital-colored-comics-chapter-{chapter}/"
+        resp = await client.get(colored_url)
+        is_colored = True
+        
         if resp.status_code != 200:
-            raise HTTPException(status_code=404, detail="Chapter not found on source.")
+            # Fallback to Black-and-White version
+            bw_url = f"https://ww10.readonepiece.com/chapter/one-piece-chapter-{chapter}/"
+            resp = await client.get(bw_url)
+            is_colored = False
             
+            if resp.status_code != 200:
+                raise HTTPException(status_code=404, detail="Chapter not found on source.")
+                
         soup = BeautifulSoup(resp.text, "lxml")
         images = []
         for img in soup.find_all("img"):
-            src = img.get("src", "")
+            src = img.get("src", "").strip()
             if "cdn" in src or "mangap" in src or "pic" in src:
                 if "logo" not in src.lower() and "icon" not in src.lower():
                     images.append(src)
         
         if not images:
             raise HTTPException(status_code=404, detail="No manga images found on page.")
+            
+        version_badge = "🎨 Colored" if is_colored else "📖 Standard B&W"
             
         # Build HTML
         html_content = f"""
@@ -589,12 +601,14 @@ async def read_manga(chapter: str):
                     box-sizing: border-box;
                 }}
                 .header h2 {{ margin: 0; font-size: 1.5rem; color: #e50914; }}
+                .header p {{ margin: 0; margin-top: 5px; color: #aaa; font-size: 0.9rem; }}
                 .footer p {{ margin: 0; color: #888; }}
             </style>
         </head>
         <body>
             <div class="header">
                 <h2>One Piece - Chapter {chapter}</h2>
+                <p>{version_badge}</p>
             </div>
         """
         
