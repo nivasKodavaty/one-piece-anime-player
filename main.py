@@ -514,7 +514,7 @@ async def get_stream(anime_id: str, episode: int):
 
 
 @app.get("/play/{episode}", tags=["Streaming"])
-async def play_redirect(episode: int):
+async def play_redirect(episode: int, request: Request):
     """
     Instantly redirects to the proxied stream.
     Perfect for a 1-step iOS Shortcut: "Open URL: https://api.com/play/1089"
@@ -525,8 +525,9 @@ async def play_redirect(episode: int):
             raise HTTPException(status_code=404, detail="No m3u8 stream found.")
             
         referer = data.referer or ""
-        # Build the proxy URL manually
-        proxy_url = f"/api/proxy/m3u8?url={quote(data.m3u8)}&referer={quote(referer)}"
+        base_url = str(request.base_url)
+        # Build the proxy URL manually with fully absolute path for AirPlay support
+        proxy_url = f"{base_url}api/proxy/m3u8?url={quote(data.m3u8)}&referer={quote(referer)}"
         return RedirectResponse(url=proxy_url)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -670,7 +671,7 @@ def _decode_url(encoded: str) -> str:
 
 
 @app.get("/api/proxy/m3u8", tags=["Proxy"])
-async def proxy_m3u8(url: str, referer: str = ""):
+async def proxy_m3u8(request: Request, url: str, referer: str = ""):
     """
     Smart proxy: serves m3u8 playlists (rewriting URLs) and binary
     segments (.ts) with the correct Referer header so VLC can play.
@@ -705,14 +706,16 @@ async def proxy_m3u8(url: str, referer: str = ""):
         content = resp.text
         lines = content.split("\n")
         rewritten = []
+        base_url = str(request.base_url)
+        
         for line in lines:
             stripped = line.strip()
             if stripped and not stripped.startswith("#"):
                 # This is a URL line (segment or sub-playlist)
                 absolute = urljoin(url, stripped)
-                proxy_url = f"/api/proxy/m3u8?url={absolute}"
+                proxy_url = f"{base_url}api/proxy/m3u8?url={quote(absolute)}"
                 if referer:
-                    proxy_url += f"&referer={referer}"
+                    proxy_url += f"&referer={quote(referer)}"
                 rewritten.append(proxy_url)
             else:
                 rewritten.append(line)
