@@ -176,179 +176,220 @@ async def extract_m3u8_from_embed(embed_url: str, referer: str) -> str | None:
 
 @app.get("/", tags=["UI"], response_class=HTMLResponse)
 async def root():
-    """Web UI for easy playback without needing Shortcuts or Scriptable."""
+    """Web UI for easy playback — works on all browsers via HLS.js."""
     html_content = """
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-        <title>One Piece Player</title>
-        <meta name="apple-mobile-web-app-capable" content="yes">
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-        <link rel="apple-touch-icon" href="https://upload.wikimedia.org/wikipedia/en/9/90/One_Piece%2C_Volume_61_Cover_%28Art%29.jpg">
-        <style>
-            :root {
-                --bg: #121212;
-                --surface: #1e1e1e;
-                --primary: #e50914;
-                --text: #ffffff;
-                --text-secondary: #aaaaaa;
-            }
-            body {
-                background-color: var(--bg);
-                color: var(--text);
-                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-                margin: 0;
-                padding: 0;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                height: 100vh;
-            }
-            .container {
-                background-color: var(--surface);
-                padding: 2.5rem 2rem;
-                border-radius: 16px;
-                box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-                text-align: center;
-                width: 85%;
-                max-width: 400px;
-            }
-            h1 {
-                margin-top: 0;
-                font-size: 1.8rem;
-                margin-bottom: 0.5rem;
-            }
-            p {
-                color: var(--text-secondary);
-                font-size: 0.9rem;
-                margin-bottom: 2rem;
-            }
-            input {
-                width: 100%;
-                box-sizing: border-box;
-                background-color: #2a2a2a;
-                border: 2px solid #333;
-                color: white;
-                font-size: 1.2rem;
-                padding: 1rem;
-                border-radius: 12px;
-                text-align: center;
-                margin-bottom: 1.5rem;
-                outline: none;
-                transition: border-color 0.2s;
-            }
-            input:focus {
-                border-color: var(--primary);
-            }
-            button {
-                width: 100%;
-                background-color: var(--primary);
-                color: white;
-                border: none;
-                padding: 1rem;
-                font-size: 1.2rem;
-                font-weight: bold;
-                border-radius: 12px;
-                cursor: pointer;
-                transition: background-color 0.2s, transform 0.1s;
-            }
-            button:active {
-                transform: scale(0.98);
-                background-color: #b80710;
-            }
-            .loader {
-                display: none;
-                margin-top: 1rem;
-                color: var(--text-secondary);
-                font-size: 0.9rem;
-            }
-            #errorMsg {
-                color: #ff4a4a;
-                margin-top: 1rem;
-                font-size: 0.9rem;
-                display: none;
-            }
-        </style>
-    </head>
-    <body>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>One Piece Player</title>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <!-- HLS.js for Android/Chrome/Firefox HLS support -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.11/dist/hls.min.js"></script>
+    <style>
+        :root {
+            --bg: #0d0d0d;
+            --surface: #1a1a1a;
+            --primary: #e50914;
+            --primary-dark: #b80710;
+            --text: #ffffff;
+            --text-secondary: #999;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+        .card {
+            background: var(--surface);
+            border-radius: 20px;
+            padding: 2.5rem 2rem;
+            width: 100%;
+            max-width: 420px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+            text-align: center;
+        }
+        .logo { font-size: 3rem; margin-bottom: 0.5rem; }
+        h1 { font-size: 1.7rem; margin-bottom: 0.3rem; }
+        .subtitle { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 2rem; }
+        input[type=number] {
+            width: 100%;
+            background: #252525;
+            border: 2px solid #333;
+            color: white;
+            font-size: 1.3rem;
+            padding: 0.9rem 1rem;
+            border-radius: 12px;
+            text-align: center;
+            outline: none;
+            transition: border-color 0.2s;
+            margin-bottom: 1rem;
+        }
+        input[type=number]:focus { border-color: var(--primary); }
+        .btn {
+            width: 100%;
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 1rem;
+            font-size: 1.1rem;
+            font-weight: 700;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+            margin-bottom: 0.75rem;
+        }
+        .btn:active { transform: scale(0.97); background: var(--primary-dark); }
+        .btn:disabled { opacity: 0.5; cursor: default; }
+        .btn-secondary {
+            background: #2a2a2a;
+            border: 2px solid #333;
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+        .btn-secondary:hover { border-color: var(--primary); color: white; }
+        .loader { display:none; margin-top:1rem; color:var(--text-secondary); font-size:0.85rem; }
+        .error { display:none; margin-top:1rem; color:#ff4a4a; font-size:0.9rem; }
+        /* Video player overlay */
+        #playerOverlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: #000;
+            z-index: 999;
+            flex-direction: column;
+        }
+        #playerOverlay.active { display: flex; }
+        #videoEl {
+            width: 100%;
+            flex: 1;
+            background: #000;
+            outline: none;
+        }
+        .player-bar {
+            background: #111;
+            padding: 0.75rem 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .close-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 0.5rem 1rem;
+            font-size: 0.9rem;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .now-playing { color: var(--text-secondary); font-size: 0.85rem; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="logo">🏴‍☠️</div>
+        <h1>One Piece</h1>
+        <p class="subtitle">Enter episode number to stream</p>
+        <input type="number" id="epInput" placeholder="e.g. 1089" inputmode="numeric" min="1">
+        <button class="btn" id="playBtn" onclick="playEpisode()">▶ Play Episode</button>
+        <button class="btn btn-secondary" onclick="location.href='/movies'">🎬 Watch Movies</button>
+        <div class="loader" id="loader">⏳ Fetching stream… this may take a few seconds</div>
+        <div class="error" id="errorMsg"></div>
+    </div>
 
-        <div class="container">
-            <h1>🏴‍☠️ One Piece</h1>
-            <p>Enter episode number to stream</p>
-            
-            <input type="number" id="epInput" placeholder="e.g. 1089" inputmode="numeric" pattern="[0-9]*">
-            <button id="playBtn" onclick="playEpisode()">Play Episode</button>
-            
-            <div id="loader" class="loader">Fetching stream... (this may take a few seconds)</div>
-            <div id="errorMsg"></div>
+    <!-- Full-screen player overlay -->
+    <div id="playerOverlay">
+        <video id="videoEl" controls playsinline autoplay></video>
+        <div class="player-bar">
+            <button class="close-btn" onclick="closePlayer()">✕ Close</button>
+            <span class="now-playing" id="nowPlaying"></span>
         </div>
+    </div>
 
-        <script>
-            // Allow pressing Enter key
-            document.getElementById("epInput").addEventListener("keypress", function(event) {
-                if (event.key === "Enter") {
-                    event.preventDefault();
-                    playEpisode();
-                }
-            });
+    <script>
+        document.getElementById('epInput').addEventListener('keypress', e => {
+            if (e.key === 'Enter') { e.preventDefault(); playEpisode(); }
+        });
 
-            async function playEpisode() {
-                const ep = document.getElementById('epInput').value;
-                const btn = document.getElementById('playBtn');
-                const loader = document.getElementById('loader');
-                const errorMsg = document.getElementById('errorMsg');
-
-                if (!ep || ep < 1) {
-                    showError("Please enter a valid episode number.");
-                    return;
-                }
-
-                // Reset UI
-                errorMsg.style.display = 'none';
-                btn.disabled = true;
-                btn.style.opacity = '0.5';
-                loader.style.display = 'block';
-
-                try {
-                    const response = await fetch(`/api/stream/one-piece/${ep}`);
-                    const data = await response.json();
-
-                    if (!response.ok || data.error) {
-                        throw new Error(data.message || "Failed to find stream.");
-                    }
-
-                    if (!data.m3u8) {
-                        throw new Error("No video stream found for this episode.");
-                    }
-
-                    // Build proxy URL
-                    const referer = data.referer || "";
-                    const proxyUrl = `/api/proxy/m3u8?url=${encodeURIComponent(data.m3u8)}&referer=${encodeURIComponent(referer)}`;
-
-                    // Navigate directly to the video stream!
-                    // iOS Safari will natively open the video player
-                    window.location.href = proxyUrl;
-
-                } catch (err) {
-                    showError(err.message);
-                } finally {
-                    btn.disabled = false;
-                    btn.style.opacity = '1';
-                    loader.style.display = 'none';
-                }
+        async function playEpisode() {
+            const ep = document.getElementById('epInput').value;
+            if (!ep || ep < 1) { showError('Please enter a valid episode number.'); return; }
+            setLoading(true);
+            try {
+                const res = await fetch('/api/stream/one-piece/' + ep);
+                const data = await res.json();
+                if (!res.ok || data.error) throw new Error(data.message || 'Failed to find stream.');
+                if (!data.m3u8) throw new Error('No video stream found for this episode.');
+                const referer = data.referer || '';
+                const proxyUrl = '/api/proxy/m3u8?url=' + encodeURIComponent(data.m3u8) + '&referer=' + encodeURIComponent(referer);
+                launchPlayer(proxyUrl, 'Episode ' + ep);
+            } catch(err) {
+                showError(err.message);
+            } finally {
+                setLoading(false);
             }
+        }
 
-            function showError(msg) {
-                const errorMsg = document.getElementById('errorMsg');
-                errorMsg.innerText = "❌ " + msg;
-                errorMsg.style.display = 'block';
+        function launchPlayer(proxyUrl, label) {
+            const overlay = document.getElementById('playerOverlay');
+            const video = document.getElementById('videoEl');
+            document.getElementById('nowPlaying').textContent = label;
+            overlay.classList.add('active');
+
+            // Destroy any existing HLS instance
+            if (window._hls) { window._hls.destroy(); window._hls = null; }
+
+            // Safari supports HLS natively; other browsers need HLS.js
+            if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                video.src = proxyUrl;
+                video.play().catch(() => {});
+            } else if (Hls.isSupported()) {
+                const hls = new Hls({ enableWorker: true });
+                hls.loadSource(proxyUrl);
+                hls.attachMedia(video);
+                hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
+                hls.on(Hls.Events.ERROR, (e, d) => {
+                    if (d.fatal) showError('Stream error: ' + d.details);
+                });
+                window._hls = hls;
+            } else {
+                showError('Your browser does not support HLS video.');
             }
-        </script>
-    </body>
-    </html>
+        }
+
+        function closePlayer() {
+            const video = document.getElementById('videoEl');
+            video.pause();
+            video.src = '';
+            if (window._hls) { window._hls.destroy(); window._hls = null; }
+            document.getElementById('playerOverlay').classList.remove('active');
+        }
+
+        function setLoading(on) {
+            document.getElementById('playBtn').disabled = on;
+            document.getElementById('playBtn').style.opacity = on ? '0.5' : '1';
+            document.getElementById('loader').style.display = on ? 'block' : 'none';
+            document.getElementById('errorMsg').style.display = 'none';
+        }
+
+        function showError(msg) {
+            const el = document.getElementById('errorMsg');
+            el.textContent = '❌ ' + msg;
+            el.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
     """
     return HTMLResponse(content=html_content)
 
@@ -531,6 +572,310 @@ async def play_redirect(episode: int, request: Request):
         return RedirectResponse(url=proxy_url)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/movies", tags=["UI"], response_class=HTMLResponse)
+async def movies_page():
+    """Movie search & watch page – works on all browsers via HLS.js."""
+    html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Movie Player</title>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.11/dist/hls.min.js"></script>
+    <style>
+        :root {
+            --bg: #0d0d0d; --surface: #1a1a1a; --card: #222;
+            --primary: #e50914; --primary-dark: #b80710;
+            --text: #fff; --text-secondary: #999;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: var(--bg); color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            min-height: 100vh; display: flex; flex-direction: column;
+            align-items: center; padding: 1.5rem 1rem;
+        }
+        header {
+            width: 100%; max-width: 520px;
+            display: flex; align-items: center; gap: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+        .back-btn {
+            background: #252525; border: none; color: var(--text-secondary);
+            border-radius: 8px; padding: 0.5rem 0.8rem;
+            font-size: 1rem; cursor: pointer;
+        }
+        header h1 { font-size: 1.4rem; }
+        .search-row {
+            width: 100%; max-width: 520px;
+            display: flex; gap: 0.5rem; margin-bottom: 1.5rem;
+        }
+        .search-row input {
+            flex: 1; background: #1e1e1e; border: 2px solid #333;
+            color: white; font-size: 1rem; padding: 0.8rem 1rem;
+            border-radius: 12px; outline: none; transition: border-color 0.2s;
+        }
+        .search-row input:focus { border-color: var(--primary); }
+        .search-row button {
+            background: var(--primary); color: white; border: none;
+            border-radius: 12px; padding: 0.8rem 1.2rem;
+            font-size: 1rem; font-weight: 700; cursor: pointer;
+            transition: background 0.2s, transform 0.1s; white-space: nowrap;
+        }
+        .search-row button:active { transform: scale(0.97); background: var(--primary-dark); }
+        .search-row button:disabled { opacity: 0.5; }
+        #status { color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 1rem; min-height: 1.2em; }
+        #status.error { color: #ff4a4a; }
+        #results { width: 100%; max-width: 520px; display: flex; flex-direction: column; gap: 0.75rem; }
+        .result-card {
+            background: var(--card); border-radius: 14px;
+            padding: 1rem; display: flex; align-items: center; gap: 1rem;
+            cursor: pointer; border: 2px solid transparent;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        .result-card:hover, .result-card:active { border-color: var(--primary); background: #2a2a2a; }
+        .result-thumb {
+            width: 56px; height: 80px; border-radius: 8px;
+            object-fit: cover; background: #333; flex-shrink: 0;
+        }
+        .result-info { text-align: left; }
+        .result-title { font-weight: 600; font-size: 0.95rem; margin-bottom: 0.25rem; }
+        .result-meta { color: var(--text-secondary); font-size: 0.8rem; }
+        .watch-btn {
+            margin-left: auto; background: var(--primary); color: white;
+            border: none; border-radius: 8px; padding: 0.5rem 0.9rem;
+            font-size: 0.85rem; font-weight: 700; cursor: pointer; flex-shrink: 0;
+        }
+        /* Player overlay */
+        #playerOverlay {
+            display: none; position: fixed; inset: 0;
+            background: #000; z-index: 999; flex-direction: column;
+        }
+        #playerOverlay.active { display: flex; }
+        #videoEl { width: 100%; flex: 1; background: #000; outline: none; }
+        .player-bar {
+            background: #111; padding: 0.75rem 1rem;
+            display: flex; align-items: center; gap: 0.75rem;
+        }
+        .close-btn {
+            background: var(--primary); color: white; border: none;
+            border-radius: 8px; padding: 0.5rem 1rem;
+            font-size: 0.9rem; font-weight: 700; cursor: pointer;
+        }
+        .now-playing { color: var(--text-secondary); font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    </style>
+</head>
+<body>
+    <header>
+        <button class="back-btn" onclick="location.href='/'">← Back</button>
+        <h1>🎬 Movie Player</h1>
+    </header>
+
+    <div class="search-row">
+        <input type="text" id="queryInput" placeholder="Search any movie…" autocomplete="off">
+        <button id="searchBtn" onclick="doSearch()">Search</button>
+    </div>
+    <div id="status"></div>
+    <div id="results"></div>
+
+    <!-- Full-screen player overlay -->
+    <div id="playerOverlay">
+        <video id="videoEl" controls playsinline autoplay></video>
+        <div class="player-bar">
+            <button class="close-btn" onclick="closePlayer()">✕ Close</button>
+            <span class="now-playing" id="nowPlaying"></span>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('queryInput').addEventListener('keypress', e => {
+            if (e.key === 'Enter') { e.preventDefault(); doSearch(); }
+        });
+
+        async function doSearch() {
+            const q = document.getElementById('queryInput').value.trim();
+            if (!q) return;
+            setStatus('Searching…');
+            document.getElementById('results').innerHTML = '';
+            document.getElementById('searchBtn').disabled = true;
+            try {
+                const res = await fetch('/api/movie/search?keyword=' + encodeURIComponent(q));
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Search failed');
+                if (!data.length) { setStatus('No results found.'); return; }
+                setStatus(data.length + ' result(s) found — tap to watch');
+                renderResults(data);
+            } catch(err) {
+                setStatus('❌ ' + err.message, true);
+            } finally {
+                document.getElementById('searchBtn').disabled = false;
+            }
+        }
+
+        function renderResults(items) {
+            const container = document.getElementById('results');
+            container.innerHTML = '';
+            items.forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'result-card';
+                card.innerHTML = `
+                    <img class="result-thumb" src="${item.image || ''}" onerror="this.style.display='none'" alt="">
+                    <div class="result-info">
+                        <div class="result-title">${item.title}</div>
+                        <div class="result-meta">${item.released || ''}</div>
+                    </div>
+                    <button class="watch-btn" onclick="watchMovie('${encodeId(item.id)}', '${escHtml(item.title)}')">▶ Watch</button>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function encodeId(id) { return encodeURIComponent(id); }
+        function escHtml(s) { return s.replace(/'/g, "&#39;").replace(/"/g, "&quot;"); }
+
+        async function watchMovie(movieId, title) {
+            setStatus('⏳ Fetching stream…');
+            try {
+                const res = await fetch('/api/movie/stream/' + movieId);
+                const data = await res.json();
+                if (!res.ok || data.error) throw new Error(data.detail || data.message || 'Stream not found');
+                if (!data.m3u8) throw new Error('No video stream found for this movie.');
+                const referer = data.referer || '';
+                const proxyUrl = '/api/proxy/m3u8?url=' + encodeURIComponent(data.m3u8) + '&referer=' + encodeURIComponent(referer);
+                launchPlayer(proxyUrl, decodeURIComponent(title));
+                setStatus('');
+            } catch(err) {
+                setStatus('❌ ' + err.message, true);
+            }
+        }
+
+        function launchPlayer(proxyUrl, label) {
+            const overlay = document.getElementById('playerOverlay');
+            const video = document.getElementById('videoEl');
+            document.getElementById('nowPlaying').textContent = label;
+            overlay.classList.add('active');
+            if (window._hls) { window._hls.destroy(); window._hls = null; }
+            if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                video.src = proxyUrl;
+                video.play().catch(() => {});
+            } else if (Hls.isSupported()) {
+                const hls = new Hls({ enableWorker: true });
+                hls.loadSource(proxyUrl);
+                hls.attachMedia(video);
+                hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
+                hls.on(Hls.Events.ERROR, (e, d) => { if (d.fatal) setStatus('❌ Stream error: ' + d.details, true); });
+                window._hls = hls;
+            } else {
+                setStatus('❌ Your browser does not support HLS video.', true);
+            }
+        }
+
+        function closePlayer() {
+            const video = document.getElementById('videoEl');
+            video.pause(); video.src = '';
+            if (window._hls) { window._hls.destroy(); window._hls = null; }
+            document.getElementById('playerOverlay').classList.remove('active');
+        }
+
+        function setStatus(msg, isError = false) {
+            const el = document.getElementById('status');
+            el.textContent = msg;
+            el.className = isError ? 'error' : '';
+        }
+    </script>
+</body>
+</html>"""
+    return HTMLResponse(content=html)
+
+
+@app.get("/api/movie/search", tags=["Movies"])
+async def search_movies(keyword: str = Query(..., min_length=1)):
+    """Search for any movie by name using Gogoanime."""
+    path = f"/search.html?keyword={keyword.replace(' ', '+')}"
+    soup = await fetch_page(path)
+
+    results = []
+    for item in soup.select(".items li, .last_episodes li"):
+        link = item.find("a")
+        if not link:
+            continue
+        href = link.get("href", "")
+        title_tag = link.get("title") or link.text.strip()
+        img = item.find("img")
+        released = item.find("p", class_="released")
+
+        anime_id = href.replace("/category/", "").strip("/")
+        if not anime_id:
+            anime_id = href.strip("/").split("/")[-1]
+
+        results.append(
+            SearchResult(
+                id=anime_id,
+                title=title_tag.strip(),
+                url=f"{BASE_URL}{href}",
+                image=img.get("src") if img else None,
+                released=released.text.strip().replace("Released: ", "") if released else None,
+            )
+        )
+    return results
+
+
+@app.get("/api/movie/stream/{movie_id}", tags=["Movies"])
+async def get_movie_stream(movie_id: str):
+    """
+    Get the stream for a movie (or any anime/movie slug).
+    For movies, episode 1 is used as the single episode.
+    """
+    # Try as a single movie (episode 1), then try the slug directly as episode page
+    episode_slug = f"{movie_id}-episode-1"
+    soup = await fetch_page(f"/{episode_slug}")
+
+    server_links = soup.select("a[data-video]")
+    if not server_links:
+        # Maybe it has no -episode-1 suffix (some movies are single page)
+        soup = await fetch_page(f"/{movie_id}")
+        server_links = soup.select("a[data-video]")
+        if not server_links:
+            raise HTTPException(status_code=404, detail=f"No streaming servers found for {movie_id}")
+
+    sources: list[StreamSource] = []
+    current_type = "raw"
+    for link in server_links:
+        embed_url = link.get("data-video", "").strip()
+        name = link.text.strip().replace("Choose this server", "").strip()
+        parent = link.find_parent(class_="server-type") or link.find_parent("div")
+        if parent:
+            parent_text = parent.get_text(strip=True).lower()
+            if "sub" in parent_text:
+                current_type = "sub"
+            elif "dub" in parent_text:
+                current_type = "dub"
+        if embed_url:
+            sources.append(StreamSource(name=name or "Unknown", url=embed_url, type=current_type))
+
+    priority_order = ["vibeplayer", "gogocdn", "vidstream", "sbplay"]
+    sorted_sources = sorted(
+        sources,
+        key=lambda s: next((i for i, p in enumerate(priority_order) if p in s.url.lower()), 99),
+    )
+
+    referer = f"{BASE_URL}/{episode_slug}"
+    m3u8_url = None
+
+    async def try_extract(source: StreamSource) -> str | None:
+        return await extract_m3u8_from_embed(source.url, referer)
+
+    tasks = [try_extract(s) for s in sorted_sources[:4]]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    for result in results:
+        if isinstance(result, str) and result:
+            m3u8_url = result
+            break
+
+    return StreamResponse(episode=1, m3u8=m3u8_url, referer=referer, sources=sources)
 
 
 @app.get("/manga/{chapter}", tags=["Manga"], response_class=HTMLResponse)
