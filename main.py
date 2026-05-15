@@ -263,7 +263,8 @@ async def root():
         #playerOverlay {
             display: none;
             position: fixed;
-            inset: 0;
+            top: 0; left: 0; right: 0; bottom: 0;
+            width: 100%; height: 100%;
             background: #000;
             z-index: 999;
             flex-direction: column;
@@ -309,10 +310,11 @@ async def root():
 
     <!-- Full-screen player overlay -->
     <div id="playerOverlay">
-        <video id="videoEl" controls playsinline autoplay></video>
+        <video id="videoEl" controls playsinline></video>
         <div class="player-bar">
             <button class="close-btn" onclick="closePlayer()">✕ Close</button>
             <span class="now-playing" id="nowPlaying"></span>
+            <button id="tapPlayBtn" class="close-btn" style="display:none;margin-left:auto" onclick="document.getElementById('videoEl').play();this.style.display='none'">▶ Tap to Play</button>
         </div>
     </div>
 
@@ -352,18 +354,26 @@ async def root():
             // Safari supports HLS natively; other browsers need HLS.js
             if (video.canPlayType('application/vnd.apple.mpegurl')) {
                 video.src = proxyUrl;
-                video.play().catch(() => {});
-            } else if (Hls.isSupported()) {
-                const hls = new Hls({ enableWorker: true });
+                video.play().catch(() => { showTapToPlay(); });
+            } else if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+                const hls = new Hls({ enableWorker: false, maxBufferLength: 30 });
                 hls.loadSource(proxyUrl);
                 hls.attachMedia(video);
-                hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
-                hls.on(Hls.Events.ERROR, (e, d) => {
-                    if (d.fatal) showError('Stream error: ' + d.details);
+                hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                    video.play().catch(() => { showTapToPlay(); });
+                });
+                hls.on(Hls.Events.ERROR, (evt, d) => {
+                    if (d.fatal) {
+                        showError('\u274c Stream error (' + d.type + '): ' + d.details);
+                        overlay.classList.remove('active');
+                        hls.destroy();
+                    }
                 });
                 window._hls = hls;
+            } else if (typeof Hls === 'undefined') {
+                showError('HLS player failed to load. Check your internet connection and reload.');
             } else {
-                showError('Your browser does not support HLS video.');
+                showError('HLS streaming is not supported in this browser.');
             }
         }
 
@@ -373,6 +383,11 @@ async def root():
             video.src = '';
             if (window._hls) { window._hls.destroy(); window._hls = null; }
             document.getElementById('playerOverlay').classList.remove('active');
+            document.getElementById('tapPlayBtn').style.display = 'none';
+        }
+
+        function showTapToPlay() {
+            document.getElementById('tapPlayBtn').style.display = 'inline-block';
         }
 
         function setLoading(on) {
@@ -683,10 +698,11 @@ async def movies_page():
 
     <!-- Full-screen player overlay -->
     <div id="playerOverlay">
-        <video id="videoEl" controls playsinline autoplay></video>
+        <video id="videoEl" controls playsinline></video>
         <div class="player-bar">
             <button class="close-btn" onclick="closePlayer()">✕ Close</button>
             <span class="now-playing" id="nowPlaying"></span>
+            <button id="tapPlayBtnM" class="close-btn" style="display:none;margin-left:auto" onclick="document.getElementById('videoEl').play();this.style.display='none'">▶ Tap to Play</button>
         </div>
     </div>
 
@@ -760,17 +776,33 @@ async def movies_page():
             if (window._hls) { window._hls.destroy(); window._hls = null; }
             if (video.canPlayType('application/vnd.apple.mpegurl')) {
                 video.src = proxyUrl;
-                video.play().catch(() => {});
-            } else if (Hls.isSupported()) {
-                const hls = new Hls({ enableWorker: true });
+                video.play().catch(() => { showTapToPlayM(); });
+            } else if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+                const hls = new Hls({ enableWorker: false, maxBufferLength: 30 });
                 hls.loadSource(proxyUrl);
                 hls.attachMedia(video);
-                hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
-                hls.on(Hls.Events.ERROR, (e, d) => { if (d.fatal) setStatus('❌ Stream error: ' + d.details, true); });
+                hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                    video.play().catch(() => { showTapToPlayM(); });
+                });
+                hls.on(Hls.Events.ERROR, (evt, d) => {
+                    if (d.fatal) {
+                        setStatus('\u274c Stream error (' + d.type + '): ' + d.details, true);
+                        overlay.classList.remove('active');
+                        hls.destroy();
+                    }
+                });
                 window._hls = hls;
+            } else if (typeof Hls === 'undefined') {
+                setStatus('\u274c HLS player failed to load. Check connection and reload.', true);
+                overlay.classList.remove('active');
             } else {
-                setStatus('❌ Your browser does not support HLS video.', true);
+                setStatus('\u274c HLS not supported in this browser.', true);
+                overlay.classList.remove('active');
             }
+        }
+
+        function showTapToPlayM() {
+            document.getElementById('tapPlayBtnM').style.display = 'inline-block';
         }
 
         function closePlayer() {
@@ -778,6 +810,7 @@ async def movies_page():
             video.pause(); video.src = '';
             if (window._hls) { window._hls.destroy(); window._hls = null; }
             document.getElementById('playerOverlay').classList.remove('active');
+            document.getElementById('tapPlayBtnM').style.display = 'none';
         }
 
         function setStatus(msg, isError = false) {
